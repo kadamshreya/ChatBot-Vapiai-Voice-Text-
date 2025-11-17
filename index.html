@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chatbot Voice + Text</title>
+
+<style>
+  body { font-family: Arial; display:flex; flex-direction:column; align-items:center; background:#f5f5f5; }
+  #chatContainer { width:600px; height:600px; background:#fff; border-radius:8px; border:1px solid #ddd; display:flex; flex-direction:column; }
+  #log { flex:1; overflow-y:auto; padding:10px; }
+  .bubble { padding:8px 12px; border-radius:16px; margin:5px 0; max-width:80%; }
+  .user { background:#cce5ff; align-self:flex-end; }
+  .bot { background:#d4edda; align-self:flex-start; }
+</style>
+</head>
+<body>
+
+<h2>Chatbot (Voice + Text)</h2>
+
+<div id="chatContainer">
+  <div id="log"></div>
+
+  <div style="display:flex;padding:10px;">
+    <input id="text" placeholder="Type your message..." style="flex:1;padding:10px;border-radius:18px;border:1px solid #ccc;">
+    <button id="send">Send</button>
+    <button id="startCall">🎤</button>
+    <button id="stopCall">🛑</button>
+  </div>
+</div>
+
+<script>
+// Elements
+const logBox = document.getElementById("log");
+const inputBox = document.getElementById("text");
+const sendBtn = document.getElementById("send");
+const startBtn = document.getElementById("startCall");
+const stopBtn = document.getElementById("stopCall");
+
+// Add chat bubble
+function addBubble(text, cls) {
+  const div = document.createElement("div");
+  div.className = "bubble " + cls;
+  div.innerText = text;
+  logBox.appendChild(div);
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+// Vapi Setup
+const assistantId = "";  
+const publicKey   = "";
+
+let vapi = null;
+
+// Load SDK
+(function loadVapi() {
+  const script = document.createElement("script");
+  script.src = "https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js";
+  script.async = true;
+
+  script.onload = () => {
+    vapi = window.vapiSDK.run({
+      apiKey: publicKey,
+      assistant: assistantId
+    });
+
+    vapi.on("call-start", () =>
+      addBubble("🎙️ Voice started", "bot")
+    );
+
+    vapi.on("call-end", () =>
+      addBubble("🛑 Voice stopped", "bot")
+    );
+
+    // USER + ASSISTANT voice transcripts
+    vapi.on("transcript", (msg) => {
+      if (!msg?.text) return;
+
+      if (msg.role === "user") {
+        addBubble("🧑 (voice): " + msg.text, "user");
+      }
+      else if (msg.role === "assistant") {
+        addBubble("🤖 (voice): " + msg.text, "bot");
+      }
+    });
+
+    // Final AI response
+    vapi.on("response.final", (msg) => {
+      if (!msg?.text) return;
+      addBubble("🤖 " + msg.text, "bot");
+
+      // Bot speaks
+      vapi.say(msg.text);
+    });
+
+    vapi.on("error", (err) => {
+      console.error("Vapi Error:", err);
+      addBubble("❌ " + err.message, "bot");
+    });
+  };
+
+  document.body.appendChild(script);
+})();
+
+// Start voice call
+startBtn.onclick = () => vapi?.start();
+
+// Stop voice call
+stopBtn.onclick = () => vapi?.stop();
+
+// TEXT CHAT
+async function sendText(input) {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ input })
+  });
+
+  const data = await res.json();
+
+  return data.output?.[0]?.content || data.message || "No response";
+}
+
+// Handle send button
+sendBtn.onclick = async () => {
+  const text = inputBox.value.trim();
+  if (!text) return;
+
+  addBubble("🧑 " + text, "user");
+  inputBox.value = "";
+
+  const reply = await sendText(text);
+  addBubble("🤖 " + reply, "bot");
+
+  // Bot speaks text reply
+  vapi?.say(reply);
+};
+
+// Send text on Enter
+inputBox.addEventListener("keypress", e => {
+  if (e.key === "Enter") sendBtn.click();
+});
+</script>
+
+</body>
+</html>
